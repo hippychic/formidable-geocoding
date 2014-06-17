@@ -1,22 +1,50 @@
 <?php 
-class GoogleMapController{
+class FrmGoogleMapController{
 
-    function GoogleMapController(){
-        add_filter('frm_pro_available_fields', array(&$this, 'add_field')); 
-        add_filter('frm_before_field_created',array(&$this, 'set_defaults')); 
-        add_action('frm_display_added_fields', array(&$this, 'admin_field')); 
-        add_action('frm_form_fields', array(&$this, 'front_field'), 10, 2);
+    function __construct() {
+        add_action('init', array('FrmGoogleMapController', 'register_scripts'));
+        add_action('wp_head', array('FrmGoogleMapController', 'style'));
+        add_action('wp_footer' , array('FrmGoogleMapController', 'print_map'));
+        
+        add_filter('frm_pro_available_fields', array('FrmGoogleMapController', 'add_field')); 
+        add_filter('frm_before_field_created', array('FrmGoogleMapController', 'set_defaults')); 
+        add_action('frm_display_added_fields', array('FrmGoogleMapController', 'admin_field')); 
+        add_action('frm_form_fields', array('FrmGoogleMapController', 'front_field'), 10, 2);
 
     }
     
-    function add_field($fields){ 
+    public static function register_scripts() {
+        wp_register_script('frm_google_api', 'https://maps.googleapis.com/maps/api/js?sensor=false', array(), true );
+        wp_register_script('frm_google_script',  dirname(dirname(__FILE__)) . '/js/frmmap.js', array( 'frm_google_api' ), true );
+    }
+    
+    public static function style() {
+?>
+<style>
+.google-map-it-canvas img {
+    border: none !important;
+    max-width: none !important;
+}
+.gmnoprint img { max-width: none !important;}
+</style>
+<?php
+    }
+    
+    public static function print_map() { 
+        if ( isset ($GLOBALS['frm-google-map']) &&  $GLOBALS['frm-google-map'] == 1 ) {
+            wp_enqueue_script('frm_google_api' );
+            wp_enqueue_script('frm_google_script' );
+        }
+    }
+    
+    public static function add_field($fields) { 
         $fields['google-map-address'] = __('Map Location');
         $fields['google-map-latitude'] = __('Latitude');
         $fields['google-map-longitude'] = __('Longitude');
         return $fields;
     }
     
-    function set_defaults($field_data){ //done
+    public static function set_defaults($field_data) { //done
         if($field_data['type'] == 'google-map-address')
             $field_data['name'] = __('Map Location');
         if($field_data['type'] == 'google-map-latitude')
@@ -26,7 +54,7 @@ class GoogleMapController{
         return $field_data;
     }
     
-    function admin_field($field){
+    public static function admin_field($field) {
 	
         if($field['type'] == 'google-map-address' ){
            $field_name = "item_meta[". $field['id'] ."]";?>
@@ -56,7 +84,7 @@ class GoogleMapController{
     }
     }
     
-    function front_field( $field, $field_name ){
+    public static function front_field( $field, $field_name ){
 
         global $frm_editing_entry, $wp_scripts, $wp_styles, $frmpro_settings;
         $entry_id = $frm_editing_entry;
@@ -71,29 +99,32 @@ class GoogleMapController{
             echo '<label class="frm_primary_label">'. $field['name'] .'</label>';
 			
 			$initzoom = get_option('frm_google_map_init_zoom');
-			if( strlen( $initzoom ) < 1 || $initzoom < 1 || $initzoom > 25 ){
-				$initzoom = 5 ;
+			if( empty( $initzoom ) || $initzoom > 25 ){
+				$initzoom = 10;
 			}
 			
 			$geozoom = get_option('frm_google_map_geocoded_zoom');
-			if( strlen( $geozoom  ) < 1 || $geozoom  < 1 || $geozoom  > 25 ){
-				$geozoom  = 5 ;
+			if ( empty( $geozoom  ) || $geozoom  > 25 ) {
+				$geozoom  = 5;
 			}
 			
 			$maptype = get_option('frm_google_map_maptype');
+			if ( empty($maptype) ) {
+			    $maptype = 'ROADMAP';
+			}
 			
-			$lat = get_option('frm_google_map_latitude');
-			if(strlen($lat)< 1 || ! is_numeric( $lat ) || abs($lat) > 85 ){
+			$lat = (int) get_option('frm_google_map_latitude');
+			if ( abs($lat) > 85 ) {
 				$lat = 0 ; 
 			}
-				$lat = sprintf( "%1\$.6f" , $lat ) ;
+			$lat = sprintf( "%1\$.6f" , $lat ) ;
 			
 			
-			$lng = get_option('frm_google_map_longitude');
-			if(strlen($lng)< 1 || ! is_numeric( $lng ) || abs($lng ) > 180 ){
+			$lng = (int) get_option('frm_google_map_longitude');
+			if ( abs($lng ) > 180 ) {
 				$lng = 0 ; 
 			}
-				$lng = sprintf( "%1\$.6f" , $lng ) ;
+			$lng = sprintf( "%1\$.6f" , $lng ) ;
 			
 		    echo '<input type="hidden"  id="frm-gm-init-zoom" value="'. $initzoom .'" />';
 			echo '<input type="hidden"  id="frm-gm-geo-zoom" value="'.$geozoom.'" />';
@@ -121,16 +152,15 @@ class GoogleMapController{
             echo '<input type="text" name="'. $field_name.'"  value="'.$value.'" id="frm-gmi-loc" onfocus="reset_map_location( this );" onkeyup="ch_pp_address_onkeyup(event);" onblur="ch_pp_addressinput();" />';
 
         }elseif($field['type'] == 'google-map-latitude' && ! isset( $GLOBALS['frm_geo_lat'] )){
-			 $GLOBALS['frm_geo_lat'] = 1 ;
+			$GLOBALS['frm_geo_lat'] = 1 ;
             $value = esc_attr($field['value']);
-            if(strlen($value)< 2 ) {
-				$value = get_option('frm_google_map_latitude');
+            if ( strlen($value)< 2 ) {
+				$value = (int) get_option('frm_google_map_latitude');
 				
-				if(strlen( $value )< 1 || ! is_numeric( $value ) || abs($value) > 85 ){
-					$value = 0 ; 
+				if ( abs($value) > 85 ) {
+					$value = 0; 
 				}
-					$value= sprintf( "%1\$.6f" , $value ) ;
-				
+				$value = sprintf( "%1\$.6f" , $value );
 			}
            
             echo '<input type="text" name="'. $field_name.'"  value="'.$value.'" id="frm-gmi-lat"  readonly="readonly" />';
@@ -138,13 +168,13 @@ class GoogleMapController{
         }elseif( $field['type'] == 'google-map-longitude' && ! isset( $GLOBALS['frm_geo_lng'] ) ){
 		    $GLOBALS['frm_geo_lng']  = 1 ;
             $value = esc_attr($field['value']);
-           if(strlen($value)< 2 ) {
-				$value = get_option('frm_google_map_longitude');
+            if ( strlen($value) < 2 ) {
+				$value = (int) get_option('frm_google_map_longitude');
 				
-				if(strlen( $value )< 1 || ! is_numeric( $value ) || abs($value ) > 180 ){
-					$value = 0 ; 
+				if ( abs($value ) > 180 ) {
+					$value = 0; 
 				}
-					$value= sprintf( "%1\$.6f" , $value ) ;
+				$value = sprintf( "%1\$.6f" , $value ) ;
 				
 			}
             echo '<input type="text" name="'. $field_name.'"  value="'. $value .'" id="frm-gmi-lng" readonly="readonly" />';
@@ -152,4 +182,3 @@ class GoogleMapController{
         }
     }
 }
-?>
